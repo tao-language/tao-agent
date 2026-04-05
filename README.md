@@ -53,8 +53,10 @@ go test ./...
 
 - [x] Phase 1: Foundation (Types, Workflows, Basic CLI)
 - [x] Phase 2: Agent & Basic Steps (Ollama Provider, Print/Ask/Prompt)
-- [ ] Phase 3: Tools & Structured Output (MCP Lite, Structured Prompting)
-- [ ] Phase 4: Control Flow (If, Match, Loop)
+- [x] Phase 3: Tools & Structured Output (MCP Lite, Structured Prompting)
+- [x] Phase 4: Control Flow (If, Match, Loop, Use)
+- [ ] Phase 5: UI (TUI with BubbleTea, GUI/Browser)
+
 
 ## Documentation
 

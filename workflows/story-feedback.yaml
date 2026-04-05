@@ -2,57 +2,57 @@ version: v1.0
 name: Story Feedback Loop
 description: Write a tiny story with human feedback.
 steps:
-- name: Ask topic
-  id: input
-  ask: What should I write a tiny story about?
-- name: Draft
-  id: draft
-  agent: writer
-  prompt: |
-    Write a tiny story about:
-    {{input}}
-- name: Feedback loop
-  for: status
-  until: Approved
-  loop:
-  - name: Agent review
-    id: status
-    agent: reviewer
+  - name: Ask topic
+    id: input
+    ask: What should I write a tiny story about?
+  - name: Draft
+    id: draft
+    agent: writer
     prompt: |
-      Review the following draft:
-      {{draft}}
-
-      Response with ONLY "Approved" or "Feedback: [your feedback]"
-  - name: Get user feedback
-    match: {{status}}
-    cases:
-      Approved:
-      - name: Show draft to user
-        print: |
-          Draft passes automated review:
-          {{draft}}
-      - id: status
-        ask: Do you approve of this story? Response with "Approved" or provide feedback to improve it.
-      Feedback:
-      - name: Show agent feedback
-        print: |
-          Agent Reviewer says:
-          {{status}}
-  - name: Address feedback
-    match: {{status}}
-    cases:
-      Approved:
-      Feedback:
-      - name: Update draft
-        id: draft
-        agent: writer
+      Write a tiny story about:
+      {{input}}
+  - name: Feedback loop
+    for: status
+    until: Approved
+    loop:
+      - name: Agent review
+        id: status
+        agent: reviewer
         prompt: |
-          Please address the following feedback on the story.
-          Feedback:
-          {{status}}
-          Original Draft:
+          Review the following draft:
           {{draft}}
-- name: Final Output
-  print: |
-    ✅ Final Story:
-    {{draft}}
+
+          Response with ONLY "Approved" or "Feedback: [your feedback]"
+      - name: Get user feedback
+        match: "{{status}}"
+        cases:
+          Approved:
+            - name: Show draft to user
+              print: |
+                Draft passes automated review:
+                {{draft}}
+            - id: status
+              ask: Do you approve of this story? Response with "Approved" or provide feedback to improve it.
+          Feedback:
+            - name: Show agent feedback
+              print: |
+                Agent Reviewer says:
+                {{status}}
+      - name: Address feedback
+        match: "{{status}}"
+        cases:
+          Approved:
+          Feedback:
+            - name: Update draft
+              id: draft
+              agent: writer
+              prompt: |
+                Please address the following feedback on the story.
+                Feedback:
+                {{status}}
+                Original Draft:
+                {{draft}}
+  - name: Final Output
+    print: |
+      ✅ Final Story:
+      {{draft}}
