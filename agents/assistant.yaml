@@ -1,0 +1,7 @@
+name: assistant
+model:
+  provider: ollama
+  name: qwen3.5:4b-mlx
+  url: http://localhost:11434
+system-prompt: |
+  You are a helpful assistant.

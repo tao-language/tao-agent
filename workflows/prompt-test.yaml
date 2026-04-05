@@ -1,0 +1,15 @@
+version: v1.0
+name: Prompt Test
+description: Test the agent prompt step
+steps:
+  - name: Ask topic
+    id: topic
+    ask: What should I write a joke about?
+  - name: Generate joke
+    id: joke
+    agent: assistant
+    prompt: Write a short joke about {{topic}}
+  - name: Display joke
+    print: |
+      Here is your joke:
+      {{joke}}
