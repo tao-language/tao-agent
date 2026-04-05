@@ -118,7 +118,8 @@ func (e *Engine) ExecuteStep(s *Step) error {
 					checkVal = e.Context[s.For]
 				}
 
-				if fmt.Sprintf("%v", checkVal) == untilVal {
+				strVal := fmt.Sprintf("%v", checkVal)
+				if strVal == untilVal || strings.HasPrefix(strVal, untilVal+":") || strings.HasPrefix(strVal, untilVal+" ") {
 					break
 				}
 			} else {
@@ -131,10 +132,23 @@ func (e *Engine) ExecuteStep(s *Step) error {
 
 	case s.Match != "":
 		val, _ := eval.Evaluate(s.Match, e.Context)
+		// Check for exact match first
 		if steps, ok := s.Cases[val]; ok {
 			for _, step := range steps {
 				if err := e.ExecuteStep(step); err != nil {
 					return err
+				}
+			}
+		} else {
+			// Try prefix match (e.g., if val is "Feedback: too short", match "Feedback")
+			for caseKey, steps := range s.Cases {
+				if strings.HasPrefix(val, caseKey+":") || strings.HasPrefix(val, caseKey+" ") {
+					for _, step := range steps {
+						if err := e.ExecuteStep(step); err != nil {
+							return err
+						}
+					}
+					break
 				}
 			}
 		}
