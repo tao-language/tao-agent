@@ -13,9 +13,10 @@ type ModelConfig struct {
 }
 
 type Agent struct {
-	Name         string      `yaml:"name"`
-	Model        ModelConfig `yaml:"model"`
-	SystemPrompt string      `yaml:"system-prompt"`
+	Name         string            `yaml:"name"`
+	Model        ModelConfig       `yaml:"model"`
+	SystemPrompt string            `yaml:"system-prompt"`
+	Messages     map[string]string `yaml:"messages,omitempty"`
 }
 
 // Load reads an agent definition from a YAML file.

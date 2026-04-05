@@ -64,6 +64,47 @@ func (d *Definition) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// ToJSONSchema converts the definition to a JSON Schema map.
+func (d *Definition) ToJSONSchema() map[string]interface{} {
+	schema := make(map[string]interface{})
+
+	switch d.Type {
+	case KindString:
+		schema["type"] = "string"
+	case KindNumber:
+		schema["type"] = "number"
+	case KindBoolean:
+		schema["type"] = "boolean"
+	case KindNull:
+		schema["type"] = "null"
+	case KindList:
+		schema["type"] = "array"
+		if d.Items != nil {
+			schema["items"] = d.Items.ToJSONSchema()
+		}
+	case KindRecord:
+		schema["type"] = "object"
+		properties := make(map[string]interface{})
+		required := []string{}
+		for name, field := range d.Fields {
+			properties[name] = field.ToJSONSchema()
+			if field.Default == nil {
+				required = append(required, name)
+			}
+		}
+		schema["properties"] = properties
+		if len(required) > 0 {
+			schema["required"] = required
+		}
+	}
+
+	if d.Description != "" {
+		schema["description"] = d.Description
+	}
+
+	return schema
+}
+
 // Validate checks if a value matches the type definition.
 func (d *Definition) Validate(v interface{}) error {
 	if v == nil {

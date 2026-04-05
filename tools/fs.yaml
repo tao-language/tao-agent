@@ -1,0 +1,5 @@
+version: v1.0
+name: FileSystem
+description: Access to local files and directories.
+command: python3
+arguments: ["-m", "mcp_server_fs", "."]
