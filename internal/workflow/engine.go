@@ -1,9 +1,7 @@
 package workflow
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -11,19 +9,22 @@ import (
 	"tao-agent/internal/eval"
 	mcpmanager "tao-agent/internal/mcp"
 	"tao-agent/internal/provider"
+	"tao-agent/internal/ui"
 )
 
 type Engine struct {
 	Context    eval.Context
 	Agents     map[string]*agent.Agent
 	MCPManager *mcpmanager.Manager
+	UI         ui.UI
 }
 
-func NewEngine() *Engine {
+func NewEngine(u ui.UI) *Engine {
 	return &Engine{
 		Context:    make(eval.Context),
 		Agents:     make(map[string]*agent.Agent),
 		MCPManager: mcpmanager.NewManager(),
+		UI:         u,
 	}
 }
 
@@ -73,31 +74,26 @@ func (e *Engine) ExecuteStep(s *Step) error {
 	switch {
 	case s.Print != "":
 		msg, _ := eval.Evaluate(s.Print, e.Context)
-		fmt.Println(msg)
+		e.UI.Print(msg)
 		result = msg
 
 	case s.Ask != "":
-		fmt.Printf("%s ", s.Ask)
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		input := e.UI.Ask(s.Ask)
 		result = input
 
 	case s.Tool != "":
-		// For simplicity, we assume server:tool format or just tool
-		// If just tool, we might need a default server
-		server := "fs" // Default for now
+		server := "fs"
 		if parts := strings.Split(s.Tool, ":"); len(parts) == 2 {
 			server = parts[0]
 			s.Tool = parts[1]
 		}
 
-		fmt.Printf("Tool: calling %s:%s...\n", server, s.Tool)
+		e.UI.Print(fmt.Sprintf("Calling tool %s:%s...", server, s.Tool))
 		res, err := e.MCPManager.CallTool(server, s.Tool, s.Inputs)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Tool result: %s\n", res)
+		e.UI.Print(fmt.Sprintf("Tool result: %s", res))
 		result = res
 
 	case s.Loop != nil:
@@ -108,11 +104,8 @@ func (e *Engine) ExecuteStep(s *Step) error {
 				}
 			}
 
-			// Evaluate until condition
 			if s.Until != "" {
 				untilVal, _ := eval.Evaluate(s.Until, e.Context)
-
-				// Get the value to check from 'for' field or last result
 				checkVal := result
 				if s.For != "" {
 					checkVal = e.Context[s.For]
@@ -123,16 +116,12 @@ func (e *Engine) ExecuteStep(s *Step) error {
 					break
 				}
 			} else {
-				// If no until, it's an infinite loop or handled elsewhere
-				// For safety in MVP, let's break if no until is provided for now
-				// unless it's specifically meant to be handled by an internal step
 				break
 			}
 		}
 
 	case s.Match != "":
 		val, _ := eval.Evaluate(s.Match, e.Context)
-		// Check for exact match first
 		if steps, ok := s.Cases[val]; ok {
 			for _, step := range steps {
 				if err := e.ExecuteStep(step); err != nil {
@@ -140,7 +129,6 @@ func (e *Engine) ExecuteStep(s *Step) error {
 				}
 			}
 		} else {
-			// Try prefix match (e.g., if val is "Feedback: too short", match "Feedback")
 			for caseKey, steps := range s.Cases {
 				if strings.HasPrefix(val, caseKey+":") || strings.HasPrefix(val, caseKey+" ") {
 					for _, step := range steps {
@@ -154,10 +142,9 @@ func (e *Engine) ExecuteStep(s *Step) error {
 		}
 
 	case s.Use != "":
-		fmt.Printf("Use: calling workflow %s...\n", s.Use)
+		e.UI.Print(fmt.Sprintf("Using workflow %s...", s.Use))
 		path := s.Use
 		if !filepath.IsAbs(path) {
-			// This might need better path resolution relative to current workflow
 			path = filepath.Join("workflows", s.Use)
 		}
 
@@ -166,12 +153,10 @@ func (e *Engine) ExecuteStep(s *Step) error {
 			return err
 		}
 
-		// Create a sub-engine with inherited context for inputs
-		subEngine := NewEngine()
+		subEngine := NewEngine(e.UI) // Pass UI to sub-engine
 		for k, v := range e.Context {
 			subEngine.Context[k] = v
 		}
-		// Also add explicit inputs from the 'use' step
 		for k, v := range s.Inputs {
 			evalV, _ := eval.Evaluate(fmt.Sprintf("%v", v), e.Context)
 			subEngine.Context[k] = evalV
@@ -180,10 +165,6 @@ func (e *Engine) ExecuteStep(s *Step) error {
 		if err := subEngine.Execute(subW); err != nil {
 			return err
 		}
-
-		// Map back context if needed or store sub-workflow final result
-		// Spec doesn't specify how 'use' returns values yet,
-		// but let's assume it stores the sub-context for now or a specific 'result'
 		result = subEngine.Context["result"]
 
 	case s.Prompt != "":
@@ -194,10 +175,8 @@ func (e *Engine) ExecuteStep(s *Step) error {
 
 		prompt, _ := eval.Evaluate(s.Prompt, e.Context)
 
-		// Build history from agent initial messages
 		history := []map[string]string{}
 		if a.Messages != nil {
-			// Note: The spec says user/agent keys, but Ollama uses user/assistant roles
 			for role, content := range a.Messages {
 				evalContent, _ := eval.Evaluate(content, e.Context)
 				if role == "agent" {
@@ -207,7 +186,6 @@ func (e *Engine) ExecuteStep(s *Step) error {
 			}
 		}
 
-		// Map provider
 		var p provider.Provider
 		switch a.Model.Provider {
 		case "ollama":
@@ -216,20 +194,16 @@ func (e *Engine) ExecuteStep(s *Step) error {
 			return fmt.Errorf("unsupported provider: %s", a.Model.Provider)
 		}
 
-		fmt.Printf("Agent (%s): thinking...\n", a.Name)
 		if s.Outputs != nil {
+			e.UI.Print("Agent: generating structured output...")
 			res, err := p.Structure(prompt, a.SystemPrompt, history, a.Model.Name, s.Outputs.ToJSONSchema())
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Agent (%s): [Structured Output]\n", a.Name)
 			result = res
 		} else {
-			res, err := p.Prompt(prompt, a.SystemPrompt, history, a.Model.Name)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("Agent (%s): %s\n", a.Name, res)
+			chunks, errs := p.Stream(prompt, a.SystemPrompt, history, a.Model.Name)
+			res := e.UI.PromptStream(chunks, errs)
 			result = res
 		}
 	default:

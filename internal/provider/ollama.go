@@ -8,9 +8,16 @@ import (
 	"net/http"
 )
 
+type Chunk struct {
+	Content  string
+	Thinking string
+	Done     bool
+}
+
 type Provider interface {
 	Prompt(prompt string, system string, messages []map[string]string, model string) (string, error)
 	Structure(prompt string, system string, messages []map[string]string, model string, schema interface{}) (interface{}, error)
+	Stream(prompt string, system string, messages []map[string]string, model string) (<-chan Chunk, <-chan error)
 }
 
 type OllamaProvider struct {
@@ -133,4 +140,69 @@ func (p *OllamaProvider) Structure(prompt string, system string, history []map[s
 	}
 
 	return jsonRes, nil
+}
+
+func (p *OllamaProvider) Stream(prompt string, system string, history []map[string]string, model string) (<-chan Chunk, <-chan error) {
+	chunkChan := make(chan Chunk)
+	errChan := make(chan error, 1)
+
+	messages := p.buildMessages(prompt, system, history)
+
+	reqBody, err := json.Marshal(map[string]interface{}{
+		"model":    model,
+		"messages": messages,
+		"stream":   true,
+	})
+	if err != nil {
+		errChan <- fmt.Errorf("failed to marshal request: %w", err)
+		return chunkChan, errChan
+	}
+
+	go func() {
+		defer close(chunkChan)
+		defer close(errChan)
+
+		resp, err := http.Post(p.BaseURL+"/api/chat", "application/json", bytes.NewBuffer(reqBody))
+		if err != nil {
+			errChan <- fmt.Errorf("failed to call ollama at %s: %w", p.BaseURL, err)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			errChan <- fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(body))
+			return
+		}
+
+		decoder := json.NewDecoder(resp.Body)
+		for {
+			var line struct {
+				Message struct {
+					Content  string `json:"content"`
+					Thinking string `json:"thinking"`
+				} `json:"message"`
+				Done bool `json:"done"`
+			}
+			if err := decoder.Decode(&line); err != nil {
+				if err == io.EOF {
+					break
+				}
+				errChan <- fmt.Errorf("failed to decode streaming response: %w", err)
+				return
+			}
+
+			chunkChan <- Chunk{
+				Content:  line.Message.Content,
+				Thinking: line.Message.Thinking,
+				Done:     line.Done,
+			}
+
+			if line.Done {
+				break
+			}
+		}
+	}()
+
+	return chunkChan, errChan
 }
