@@ -15,6 +15,8 @@ All these components can be provided and configured by the user.
 - **Agents**: (YAML) A configured model with skills, tools, system prompt, and parameters.
 - **Workflows**: (YAML) Deterministic control flow and orchestration of steps.
 
+Even though agents are user-defined, there should be a default (fallback) agent.
+
 ## User Interface
 
 There should be two ways of interacting with the agent:
@@ -30,7 +32,7 @@ Must be flexible enough to allow for any kind of use case.
 Some examples, but not limited to:
 - Coding workflow: Research, plan, implement, review, with human feedback loop
 - Asset creation: Generate and edit images, audio, 3D models, etc.
-- Role playing: Virtual D&D with character and inventory management
+- Role playing: Virtual D&D with character and inventory management.
 
 # Types
 
@@ -116,13 +118,205 @@ Here are some examples of how types are represented:
   # error: String
 ```
 
+# Workflows
+
+They are defined by a sequence of steps.
+
+These are the supported steps:
+
+- **prompt**: prompts an agent, can return structured outputs
+- **ask**: asks the user, useful for feedback loops
+- **tool**: directly calls a tool
+- **print**: prints a message directly
+- **loop**: loops until a condition is met
+- **match**: branches to different cases depending on the input
+- **use**: calls another workflow file, like a function 
+
+You can interpolate variables like `{{var_name}}`.
+
+The first user message is stored in the automatic variable `{{input}}`.
+
+Every step can have an optional `id` field to reference.
+
+Every step can have an optional `if` field to only run if a `Bool` condition is met.
+
+Runtime session state should be saved to a JSON file every time a step finishes to allow resuming a session.
+
+## Prompt
+
+Triggers if a step has a `prompt` field.
+
+```yaml
+steps:
+# Minimal case
+- prompt: Prompt to send to the agent
+
+# Custom case
+- name: Display name # defaults to "<agent>: <prompt-first-line>"
+  id: my-prompt-id # defaults to None
+  if: {{condition}} # defaults to True
+  prompt: Prompt to send to the agent
+  agent: agent-name # defaults to the default/fallback agent
+  parameters: # defaults to what is defined in the agent yaml file
+    temperature: 0.2
+  tools: # defaults to what is define din the agent yaml file
+  - write-file # this is added on top of what is defined by the agent
+  outputs: # defaults to String
+    type: Bool
+```
+
+## Ask
+
+Triggers if a step has a `ask` field.
+
+```yaml
+steps:
+# Minimal case
+- ask: What's your name?
+
+# Custom case
+- name: Human approval
+  id: my-ask-id # defaults to None
+  if: {{condition}} # defaults to True
+  ask: Do you approve?
+  outputs: Bool # defaults to String
+  outputs-agent: default # model to interpret the output type if not String, defaults to default agent
+  choices: # message-display: output-value
+  - Yes: True
+  - No: False
+  allow-open-answer: False # defaults to True, if True it's interpreted by the agent on the expected type
+  default: Yes # defaults to None, default selected value to "ghost" input in TUI
+```
+
+## Tool
+
+Triggers if a step has a `tool` field.
+
+```yaml
+steps:
+# Minimal case
+- tool: read-file
+  inputs:
+    path: my-file.txt
+
+# Custom case
+- name: Read file
+  id: my-tool-id # defaults to None
+  if: {{condition}} # defaults to True
+  tool: read-file
+  inputs:
+    path: my-file.txt
+```
+
+## Print
+
+Triggers if a step has a `print` field.
+
+```yaml
+steps:
+# Minimal case
+- print: Some message
+
+# Custom case
+- name: Print status
+  id: my-print-id # defaults to None
+  if: {{condition}} # defaults to True
+  print: Approved
+```
+
+## Loop
+
+Triggers if a step has a `loop` field.
+
+The `until` checks the last output of the `loop` steps by default, unless a `for` is provided.
+
+```yaml
+steps:
+# Minimal case
+- until: Exit
+  loop:
+  - ask: How to proceed?
+    outputs:
+      Continue:
+      Exit:
+
+# Custom case
+- name: Loop until user wants to exit
+  id: my-loop-id # defaults to None
+  if: {{condition}} # defaults to True
+  for: status
+  until: Exit
+  loop:
+  - id: status # used for loop.until
+    ask: How to proceed?
+    outputs:
+      Continue:
+      Exit:
+```
+
+## Match
+
+Triggers if a step has a `match` field.
+
+```yaml
+steps:
+# Minimal case
+
+# Custom case
+
+```
+
+## Use
+
+Triggers if a step has a `use` field.
+
+```yaml
+steps:
+# Minimal case
+- use: path/to/my-workflow.yaml
+
+# Custom case
+- use: path/to/my-custom-workflow.yaml
+  inputs:
+    filename: {{file}}
+    retries: 3
+```
+
+## Conditional steps
+
+All steps support an `if` field to run _only_ if the condition is met.
+
+The condition **must** be a `Bool`.
+
+```yaml
+steps:
+- id: approved
+  prompt: |
+    Do you approve of this?
+    {{input}}
+  outputs: Bool
+- name: Conditional step
+  if: {{approved}} # this must be a Bool
+  print: ✅ Approved
+```
+
+## Invalid steps
+
+```yaml
+steps:
+- name: Step cannot be identified
+- name: Ambiguous step kind, 'use' or 'prompt'?
+  use: my-workflow.yaml
+  prompt: Hello
+```
+
 # Examples
 
 ## Tools Example
 
-Tools are defined in MCP servers, they can be local or remote.
+Tools are defined in MCP servers, they can be local, remote, or workflow YAML files.
 
-File: `tools/fs.yaml`
+MCP servers expose `tools/list` to list all the available tools in the server.
 
 ```yaml
 # Local MCP server
@@ -131,21 +325,6 @@ name: FileSystem
 description: Access to local files and directories.
 command: python
 arguments: ["-m", "fs-mcp"]
-tools:
-  list-files:
-    description: Lists the files for a given directory
-    inputs:
-      directory:
-        type: String
-        default: "."
-    outputs:
-      type: List
-      items: String
-  read-file:
-    description: Reads a file contents
-    inputs:
-      path: String
-    # outputs: String # defaults to String
 ```
 
 ```yaml
@@ -154,13 +333,19 @@ version: v1.0
 name: Calculator
 description: Solves a math expression.
 url: http://localhost:1234
+```
+
+For local workflow files, each workflow function must be defined explicitly.
+Each workflow file includes typed inputs and outputs, as well as descriptions.
+
+```yaml
+# Workflow tool
+version: v1.0
+name: Workflow tools
+description: Tools defined in workflow files.
 tools:
-  evaluate:
-    inputs:
-      expression: String
-    outputs:
-      type: Result
-      ok: Number
+  feedback-loop:
+    use: workflows/tools/feedback-loop.yaml
 ```
 
 ## Skill Example
@@ -202,14 +387,13 @@ File: `agents/assistant.yaml`
 model:
   provider: ollama
   name: qwen3.5:4b
-tools: # mcp-server@tool-name: permissions
-  - fs@list-files: allow # from tools/fs.yaml
-  - fs@read-file # permission defaults to ask
+tools: # tool-name: permissions
+  - list-files: allow # from tools/fs.yaml
+  - read-file # permission defaults to ask
 system-prompt: |
   You are a helpful assistant.
   You can list and read files, but not modify any file.
 ```
-
 
 File: `agents/security-reviewer.yaml`
 
@@ -222,11 +406,13 @@ model:
   provider: lmstudio
   name: qwen3.5:4b
 parameters:
-  context-length: 8k
   temperature: 0.2
+context:
+  length: 8k
+  full-strategy: summarize # summarize | sliding-window | truncate-start | truncate-end | truncate-middle
 tools:
-  - fs@list-files: allow
-  - fs@read-file:
+  - list-files: allow
+  - read-file:
       ask: "~/**"
       allow: "./**"
       deny: "/**"
@@ -250,7 +436,7 @@ For Cloud models:
 model:
   provider: http://my-model-url.com/
   name: my-model-id
-  api-key: my-provider-api-key
+  api-key: {{env.MY_API_KEY}}
 ```
 
 ```yaml
@@ -265,22 +451,50 @@ model:
 
 Used to orchestrate agents with deterministic control flow.
 
-The first user message is stored in the automatic variable `{{input}}`.
-
 ```yaml
 version: v1.0
-name: My workflow
-description: A simple workflow example
+name: Human feedback loop
+description: Demonstrate agent reviewer with human feedback loop
 steps:
-- name: Sentiment analysis
+- name: Draft
+  id: draft
   agent: assistant
   prompt: |
-    Classify the sentiment of the following:
+    Write a draft for:
     {{input}}
-  outputs:
-    type: Union
-    alternatives:
-    - Positive
-    - Neutral
-    - Negative
+- name: Feedback loop
+  for: status
+  until: Approved
+  loop:
+  - name: Agent review
+    id: status
+    prompt: |
+      Review the following:
+      {{draft}}
+    outputs:
+    - Approved: Reviewer agent approves
+    - Feedback: Found issues that must be addressed
+  - name: Get user feedback
+    match: {{status}}
+    cases:
+      Approved:
+      - id: {{status}}
+        ask: Looks good to me, do you approve?
+        outputs:
+        - Approved: User approves
+        - Feedback: User provided feedback to address
+      Feedback: # Reviewer feedback, address directly without user intervention
+  - name: Address feedback
+    match: {{status}}
+    cases:
+      Approved: # Approved, do nothing, will exit loop
+      Feedback:
+      - name: Address feedback
+        id: draft
+        prompt: |
+          Please address the provided feedback on the following draft:
+          Feedback:
+          {{status}}
+          Draft:
+          {{draft}}
 ```
