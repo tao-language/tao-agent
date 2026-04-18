@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"strings"
 
 	"tao-agent/internal/provider"
@@ -56,6 +58,32 @@ func initialModel() model {
 	}
 }
 
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		}
+	}
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m model) View() string {
+	var s strings.Builder
+	for _, h := range m.history {
+		s.WriteString(h + "\n")
+	}
+	s.WriteString(m.input.View())
+	return s.String()
+}
+
 // These methods will actually run the tea.Program in a way that blocks or handles messages.
 // This is a bit complex with BubbleTea because it's usually the driver.
 // We'll implement a simpler version for the MVP that uses BubbleTea for the TUI display.
@@ -66,9 +94,10 @@ func (b *BubbleTeaUI) Print(message string) {
 
 func (b *BubbleTeaUI) Ask(question string) string {
 	fmt.Print(systemStyle.Render("Tao: ") + question + " ")
-	var input string
-	fmt.Scanln(&input)
-	return input
+
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	return strings.TrimSpace(input)
 }
 
 func (b *BubbleTeaUI) PromptStream(chunks <-chan provider.Chunk, errs <-chan error) string {

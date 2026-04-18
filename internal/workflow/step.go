@@ -18,9 +18,9 @@ type Step struct {
 	Tool       string                 `yaml:"tool,omitempty"`
 	Inputs     map[string]interface{} `yaml:"inputs,omitempty"`
 	Print      string                 `yaml:"print,omitempty"`
-	Until      string                 `yaml:"until,omitempty"`
-	For        string                 `yaml:"for,omitempty"`
-	Loop       []*Step                `yaml:"loop,omitempty"`
+	While       string                 `yaml:"while,omitempty"` // continue WHILE condition is true
+	MaxIterations *int                  `yaml:"max-iterations,omitempty"` // optional upper bound (nil = unbounded)
+	Steps       []*Step                `yaml:"steps,omitempty"`     // body of while loop
 	Match      string                 `yaml:"match,omitempty"`
 	Cases      map[string][]*Step     `yaml:"cases,omitempty"`
 	Use        string                 `yaml:"use,omitempty"`

@@ -1,7 +1,7 @@
 name: writer
 model:
   provider: ollama
-  name: qwen3.5:4b
+  name: qwen3.5:0.8b-mlx-bf16
 system-prompt: |
   You are a creative writer. Your task is to write a short, one-paragraph story based on the user's topic.
   Keep it concise and engaging.

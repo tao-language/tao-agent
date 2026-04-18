@@ -36,8 +36,7 @@ Agents are defined in `agents/<name>.yaml`. Example:
 name: assistant
 model:
   provider: ollama
-  name: qwen2.5:latest
-  url: http://localhost:11434
+  name: qwen3.5:4b
 system-prompt: |
   You are a helpful assistant.
 ```
